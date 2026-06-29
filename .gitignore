@@ -1,0 +1,50 @@
+# macOS system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.old
+*.log
+
+# Office temporary files
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# Sensitive/private files
+.env
+.env.*
+credentials*
+secrets*
+passwords*
+api_keys*
+tokens*
+private_notes*
+confidential*
+internal*
+
+# Screenshots and recordings
+screenshots/
+recordings/
+screen-recordings/
+
+# Exports and downloads
+exports/
+downloads/
+
+# Archives
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+
+# Editor folders
+.vscode/
+.idea/
