@@ -1,0 +1,43 @@
+In the context of modern Windows and your Western Digital My Passport Ultra, the "Invalid drive specification" error usually means the system cannot find or access the specific drive or partition you are trying to target. This often happens if the drive's partition table is corrupted, if it lacks a drive letter, or if you are using legacy commands on a modern file system. [1, 2, 3, 4]  
+
+Common Causes 
+
+Missing or Mismatched Drive Letter: The command is targeting a letter (like E:) that is not currently assigned to your WD drive. 
+
+Corrupted Partition Table: The drive is seen as "RAW" or "Unallocated," meaning it has no valid "specification" for Windows to follow. 
+
+Write Protection: If the drive is locked or set to read-only, formatting commands may fail with vague specification errors. 
+
+Legacy Command Issues: Using older DOS-style format commands on newer NTFS/GPT partitions can trigger this error.
+
+ 
+
+How to Fix Using Diskpart: 
+
+Since standard format commands are failing, use Diskpart to wipe the drive's configuration entirely and start fresh. This process deletes all data on the drive. [10]  
+
+Open Command Prompt as Administrator. 
+
+Type diskpart and press Enter. 
+
+Type list disk to identify your WD My Passport (usually Disk 1 or 2 based on size). 
+
+Type select disk X (replace X with your drive's number). 
+
+Type clean to remove all partition and signature information. 
+
+Type create partition primary. 
+
+Type format fs=ntfs quick to apply a new file system. 
+
+Type assign to give it a fresh drive letter. 
+
+ 
+
+Alternative Solutions 
+
+Check Connections: A faulty USB cable or insufficient power from a USB hub can cause the drive to "drop" during a command, leading to this error. Plug the drive directly into a motherboard port. 
+
+Use WD Drive Utilities: If Windows tools fail, download WD Drive Utilities to perform a "Drive Erase" which can bypass OS-level specification errors. 
+
+Initialize in Disk Management: If the drive shows as "Not Initialized" in Disk Management (Win + X > Disk Management), right-click the Disk # (left side) and select Initialize Disk. 
