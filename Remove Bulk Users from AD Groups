@@ -1,0 +1,101 @@
+
+Import-Module ActiveDirectory
+
+# CONFIGURATION
+$Server = "DC01.contoso.com"
+$WhatIfMode = $true
+
+$Users = Get-Content "C:\Temp\Users.txt"
+$Groups = Get-Content "C:\Temp\Groups.txt"
+
+$TimeStamp = Get-Date -Format "yyyyMMdd_HHmmss"
+$Transcript = "C:\Temp\ADRemoval_$TimeStamp.txt"
+$Report = "C:\Temp\ADRemoval_$TimeStamp.csv"
+
+# Start Transcript
+Start-Transcript -Path $Transcript
+
+$Results = @()
+
+foreach ($Group in $Groups)
+{
+    foreach ($User in $Users)
+    {
+        # Verify user exists
+        $ADUser = Get-ADUser $User -Server $Server -ErrorAction SilentlyContinue
+
+        if (!$ADUser)
+        {
+            $Results += [PSCustomObject]@{
+                User   = $User
+                Group  = $Group
+                Status = "User Not Found"
+            }
+            continue
+        }
+
+        # Verify group exists
+        $ADGroup = Get-ADGroup $Group -Server $Server -ErrorAction SilentlyContinue
+
+        if (!$ADGroup)
+        {
+            $Results += [PSCustomObject]@{
+                User   = $User
+                Group  = $Group
+                Status = "Group Not Found"
+            }
+            continue
+        }
+
+        # Check Membership
+        $Member = Get-ADGroupMember $Group -Server $Server |
+                  Where-Object {$_.SamAccountName -eq $User}
+
+        if ($Member)
+        {
+            if ($WhatIfMode)
+            {
+                Remove-ADGroupMember `
+                    -Identity $Group `
+                    -Members $User `
+                    -Server $Server `
+                    -Confirm:$false `
+                    -WhatIf
+
+                $Status = "Would Remove"
+            }
+            else
+            {
+                Remove-ADGroupMember `
+                    -Identity $Group `
+                    -Members $User `
+                    -Server $Server `
+                    -Confirm:$false
+
+                $Status = "Removed"
+            }
+        }
+        else
+        {
+            $Status = "Not a Member"
+        }
+
+        $Results += [PSCustomObject]@{
+            User   = $User
+            Group  = $Group
+            Status = $Status
+        }
+    }
+}
+
+# Display Results
+$Results | Format-Table -AutoSize
+
+# Export Results
+$Results | Export-Csv $Report -NoTypeInformation
+
+Write-Host ""
+Write-Host "Report Saved: $Report" -ForegroundColor Green
+
+# Stop Transcript
+Stop-Transcript
