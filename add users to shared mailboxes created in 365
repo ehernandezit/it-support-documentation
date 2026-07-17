@@ -1,0 +1,111 @@
+# =============================================
+# Configuration
+# =============================================
+
+$DateStamp = Get-Date -Format "yyyyMMdd_HHmmss"
+
+$LogFolder = "C:\Logs"
+New-Item -Path $LogFolder -ItemType Directory -Force | Out-Null
+
+$TranscriptFile = "$LogFolder\Transcript_$DateStamp.txt"
+$LogFile = "$LogFolder\MailboxResults_$DateStamp.log"
+$CsvFile = "$LogFolder\MailboxResults_$DateStamp.csv"
+
+# Start Transcript
+Start-Transcript -Path $TranscriptFile -Append
+
+Write-Host "Starting script..." -ForegroundColor Green
+
+# =============================================
+# Connect to Exchange Online
+# =============================================
+
+try {
+    Connect-ExchangeOnline -ShowBanner:$false
+    Write-Host "Connected to Exchange Online" -ForegroundColor Green
+}
+catch {
+    Write-Host "Connection failed" -ForegroundColor Red
+    Stop-Transcript
+    exit
+}
+
+# =============================================
+# Input File
+# =============================================
+
+$InputFile = "C:\Scripts\MailboxAccess.txt"
+
+# File Format:
+# SharedMailbox@contoso.com,user1@contoso.com
+# SharedMailbox@contoso.com,user2@contoso.com
+
+$Results = @()
+
+Get-Content $InputFile | ForEach-Object {
+
+    $Line = $_.Split(",")
+
+    $Mailbox = $Line[0].Trim()
+    $User = $Line[1].Trim()
+
+    try {
+
+        Write-Host "Processing $User -> $Mailbox" -ForegroundColor Yellow
+
+        Add-MailboxPermission `
+            -Identity $Mailbox `
+            -User $User `
+            -AccessRights FullAccess `
+            -InheritanceType All `
+            -ErrorAction Stop
+
+        $Result = [PSCustomObject]@{
+            TimeStamp = Get-Date
+            Mailbox = $Mailbox
+            User = $User
+            Status = "SUCCESS"
+            Error = ""
+        }
+
+        Write-Host "SUCCESS" -ForegroundColor Green
+
+    }
+    catch {
+
+        $Result = [PSCustomObject]@{
+            TimeStamp = Get-Date
+            Mailbox = $Mailbox
+            User = $User
+            Status = "FAILED"
+            Error = $_.Exception.Message
+        }
+
+        Write-Host "FAILED" -ForegroundColor Red
+    }
+
+    $Results += $Result
+
+    Add-Content -Path $LogFile -Value ($Result | ConvertTo-Json -Compress)
+}
+
+# =============================================
+# Display Results
+# =============================================
+
+$Results | Format-Table -AutoSize
+
+# =============================================
+# Export Results
+# =============================================
+
+$Results | Export-Csv $CsvFile -NoTypeInformation
+
+Write-Host ""
+Write-Host "Transcript: $TranscriptFile" -ForegroundColor Cyan
+Write-Host "Log File:   $LogFile" -ForegroundColor Cyan
+Write-Host "CSV File:   $CsvFile" -ForegroundColor Cyan
+
+Disconnect-ExchangeOnline -Confirm:$false
+
+Stop-Transcript
