@@ -1,0 +1,322 @@
+<#
+================================================================================
+Script Name: Update-ADUserFirstNameAndDisplayName.ps1
+
+DESCRIPTION
+    Updates Active Directory users' First Name (GivenName) and Display Name.
+
+PROCESS
+    1. Reads users from a TXT file.
+    2. Reads new First Name and Display Name values from a CSV.
+    3. Matches TXT users to CSV records.
+    4. Updates Active Directory.
+    5. Verifies changes after update.
+    6. Creates a transcript log.
+    7. Supports Test Mode before making changes.
+
+TXT FILE EXAMPLE
+================================================================================
+
+jdoe
+asmith
+bjones
+
+CSV FILE EXAMPLE
+================================================================================
+
+SamAccountName,FirstName,DisplayName
+jdoe,John,John Doe
+asmith,Amy,Amy Smith
+bjones,Robert,Robert Jones
+
+REQUIREMENTS
+================================================================================
+
+- ActiveDirectory Module
+- RSAT Tools
+- AD Admin Rights
+- Access to specified Domain Controller
+
+================================================================================
+#>
+
+Import-Module ActiveDirectory
+
+function Update-ADUserNames {
+
+    param (
+        [string]$UserListPath,
+        [string]$CsvPath,
+        [string]$DomainController,
+        [bool]$WhatIfMode
+    )
+
+    # -------------------------------------------------------------------------
+    # Statistics Counters
+    # -------------------------------------------------------------------------
+
+    $script:SuccessCount = 0
+    $script:FailedCount = 0
+    $script:SkippedCount = 0
+
+    # -------------------------------------------------------------------------
+    # Verify required files exist
+    # -------------------------------------------------------------------------
+
+    if (!(Test-Path $UserListPath)) {
+        Write-Error "User list file not found: $UserListPath"
+        return
+    }
+
+    if (!(Test-Path $CsvPath)) {
+        Write-Error "CSV file not found: $CsvPath"
+        return
+    }
+
+    # -------------------------------------------------------------------------
+    # Import files
+    # -------------------------------------------------------------------------
+
+    $UserList = Get-Content $UserListPath | Where-Object { $_.Trim() -ne "" }
+    $CsvData = Import-Csv $CsvPath
+
+    Write-Host ""
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host "Starting Active Directory Name Update Process"
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    foreach ($SamAccountName in $UserList) {
+
+        Write-Host "Processing User: $SamAccountName" -ForegroundColor White
+
+        # ---------------------------------------------------------------------
+        # Find matching CSV record
+        # ---------------------------------------------------------------------
+
+        $UserRecord = $CsvData | Where-Object {
+            $_.SamAccountName -eq $SamAccountName
+        }
+
+        if (-not $UserRecord) {
+
+            Write-Warning "No matching CSV record found for $SamAccountName"
+
+            $script:SkippedCount++
+
+            continue
+        }
+
+        try {
+
+            # -----------------------------------------------------------------
+            # Get current AD user information
+            # -----------------------------------------------------------------
+
+            $ADUser = Get-ADUser `
+                -Identity $SamAccountName `
+                -Server $DomainController `
+                -Properties GivenName,DisplayName `
+                -ErrorAction Stop
+
+            Write-Host ""
+            Write-Host "Current Values" -ForegroundColor Yellow
+            Write-Host "----------------------------------"
+            Write-Host "First Name   : $($ADUser.GivenName)"
+            Write-Host "Display Name : $($ADUser.DisplayName)"
+
+            Write-Host ""
+            Write-Host "New Values" -ForegroundColor Cyan
+            Write-Host "----------------------------------"
+            Write-Host "First Name   : $($UserRecord.FirstName)"
+            Write-Host "Display Name : $($UserRecord.DisplayName)"
+
+            # -----------------------------------------------------------------
+            # TEST MODE
+            # -----------------------------------------------------------------
+
+            if ($WhatIfMode) {
+
+                Write-Host ""
+                Write-Host "[TEST MODE]" -ForegroundColor Yellow
+                Write-Host "No changes made."
+                Write-Host "Would update $SamAccountName"
+                Write-Host ""
+
+                continue
+            }
+
+            # -----------------------------------------------------------------
+            # Update Active Directory
+            # -----------------------------------------------------------------
+
+            Set-ADUser `
+                -Identity $SamAccountName `
+                -Server $DomainController `
+                -GivenName $UserRecord.FirstName `
+                -DisplayName $UserRecord.DisplayName
+
+            # -----------------------------------------------------------------
+            # Verify Changes
+            # -----------------------------------------------------------------
+
+            $VerifyUser = Get-ADUser `
+                -Identity $SamAccountName `
+                -Server $DomainController `
+                -Properties GivenName,DisplayName
+
+            $FirstNameVerified =
+                $VerifyUser.GivenName -eq $UserRecord.FirstName
+
+            $DisplayNameVerified =
+                $VerifyUser.DisplayName -eq $UserRecord.DisplayName
+
+            if ($FirstNameVerified -and $DisplayNameVerified) {
+
+                Write-Host ""
+                Write-Host "[SUCCESS - VERIFIED]" -ForegroundColor Green
+                Write-Host ""
+
+                Write-Host "First Name"
+                Write-Host "Expected : $($UserRecord.FirstName)"
+                Write-Host "Actual   : $($VerifyUser.GivenName)"
+
+                Write-Host ""
+
+                Write-Host "Display Name"
+                Write-Host "Expected : $($UserRecord.DisplayName)"
+                Write-Host "Actual   : $($VerifyUser.DisplayName)"
+
+                $script:SuccessCount++
+            }
+            else {
+
+                Write-Host ""
+                Write-Host "[WARNING - VERIFICATION FAILED]" -ForegroundColor Red
+
+                Write-Host ""
+                Write-Host "First Name"
+                Write-Host "Expected : $($UserRecord.FirstName)"
+                Write-Host "Actual   : $($VerifyUser.GivenName)"
+
+                Write-Host ""
+
+                Write-Host "Display Name"
+                Write-Host "Expected : $($UserRecord.DisplayName)"
+                Write-Host "Actual   : $($VerifyUser.DisplayName)"
+
+                $script:FailedCount++
+            }
+
+            Write-Host ""
+            Write-Host "----------------------------------------------------"
+            Write-Host ""
+        }
+        catch {
+
+            Write-Host ""
+            Write-Host "[ERROR] Unable to process $SamAccountName" `
+                -ForegroundColor Red
+
+            Write-Host $_.Exception.Message `
+                -ForegroundColor Red
+
+            Write-Host ""
+
+            $script:FailedCount++
+        }
+    }
+}
+
+# =============================================================================
+# CONFIGURATION SECTION
+# =============================================================================
+# Most changes should only be made here.
+# =============================================================================
+
+# Domain Controller
+$DomainController = "NYCDC01.contoso.com"
+
+# TXT file containing users to update
+$UserListPath = "C:\Scripts\Users.txt"
+
+# CSV containing updated names
+$CsvPath = "C:\Scripts\NameChanges.csv"
+
+# Log folder
+$LogFolder = "C:\Scripts\Logs"
+
+# TRUE = Test Mode
+# FALSE = Make Changes
+$WhatIfMode = $true
+
+# =============================================================================
+# TRANSCRIPT LOGGING
+# =============================================================================
+
+if (!(Test-Path $LogFolder)) {
+
+    New-Item `
+        -Path $LogFolder `
+        -ItemType Directory `
+        -Force | Out-Null
+}
+
+$TranscriptFile = `
+"$LogFolder\AD_FirstName_DisplayName_Update_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
+
+Start-Transcript -Path $TranscriptFile -Force
+
+Write-Host ""
+Write-Host "Transcript Started" -ForegroundColor Green
+Write-Host "Log File:"
+Write-Host $TranscriptFile -ForegroundColor Cyan
+
+try {
+
+    # -------------------------------------------------------------------------
+    # Optional Admin Credential Prompt
+    # -------------------------------------------------------------------------
+
+    Write-Host ""
+    Write-Host "Enter your AD Admin credentials if required." `
+        -ForegroundColor Yellow
+
+    $Credential = Get-Credential
+
+    Update-ADUserNames `
+        -UserListPath $UserListPath `
+        -CsvPath $CsvPath `
+        -DomainController $DomainController `
+        -WhatIfMode $WhatIfMode
+
+    # -------------------------------------------------------------------------
+    # Summary
+    # -------------------------------------------------------------------------
+
+    Write-Host ""
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host "UPDATE SUMMARY"
+    Write-Host "====================================================" -ForegroundColor Cyan
+
+    Write-Host "Successful Updates : $SuccessCount" `
+        -ForegroundColor Green
+
+    Write-Host "Failed Updates     : $FailedCount" `
+        -ForegroundColor Red
+
+    Write-Host "Skipped Users      : $SkippedCount" `
+        -ForegroundColor Yellow
+
+    Write-Host ""
+    Write-Host "Transcript Saved To:"
+    Write-Host $TranscriptFile -ForegroundColor Cyan
+
+    Write-Host ""
+    Write-Host "Process Complete."
+    Write-Host "====================================================" -ForegroundColor Cyan
+}
+finally {
+
+    Stop-Transcript
+}
